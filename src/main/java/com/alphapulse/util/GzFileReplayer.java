@@ -1,8 +1,8 @@
 package com.alphapulse.util;
 
 import com.alphapulse.core.AlphaEngine;
+import com.alphapulse.infra.QuestDBWriter;
 import com.alphapulse.model.GzJsonTick;
-import com.alphapulse.model.MarketTick;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
@@ -14,12 +14,12 @@ import java.util.zip.GZIPInputStream;
 
 /**
  * A utility to replay historical market data from gzipped JSON files.
- * This class is essential for backtesting the trading logic against historical data.
  */
 public class GzFileReplayer {
 
     private final VirtualClock clock;
     private final AlphaEngine engine;
+    private final QuestDBWriter writer;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     /**
@@ -27,42 +27,39 @@ public class GzFileReplayer {
      *
      * @param clock  The VirtualClock to be updated with tick timestamps.
      * @param engine The AlphaEngine that will process the replayed ticks.
+     * @param writer The QuestDBWriter that will persist the replayed ticks.
      */
-    public GzFileReplayer(VirtualClock clock, AlphaEngine engine) {
+    public GzFileReplayer(VirtualClock clock, AlphaEngine engine, QuestDBWriter writer) {
         if (clock.getMode() != VirtualClock.ClockMode.REPLAY) {
             throw new IllegalArgumentException("GzFileReplayer can only be used with a VirtualClock in REPLAY mode.");
         }
         this.clock = clock;
         this.engine = engine;
+        this.writer = writer;
     }
 
     /**
-     * Reads a gzipped file, replays the ticks, and sends them to the engine.
+     * Reads a gzipped file, replays ticks, and sends them to the engine and writer.
      *
      * @param filePath The path to the .gz file.
      * @throws IOException If there is an error reading the file.
      */
     public void replay(Path filePath) throws IOException {
-        try (FileInputStream fileInputStream = new FileInputStream(filePath.toFile());
-             GZIPInputStream gzipInputStream = new GZIPInputStream(fileInputStream);
-             InputStreamReader inputStreamReader = new InputStreamReader(gzipInputStream);
-             BufferedReader bufferedReader = new BufferedReader(inputStreamReader)) {
+        try (FileInputStream fis = new FileInputStream(filePath.toFile());
+             GZIPInputStream gzis = new GZIPInputStream(fis);
+             InputStreamReader reader = new InputStreamReader(gzis);
+             BufferedReader br = new BufferedReader(reader)) {
 
             String line;
-            while ((line = bufferedReader.readLine()) != null) {
+            while ((line = br.readLine()) != null) {
                 try {
                     GzJsonTick tick = objectMapper.readValue(line, GzJsonTick.class);
 
-                    // Update the virtual clock with the exchange timestamp from the tick.
-                    // This is the core of the deterministic replay.
                     clock.update(tick.exchange_ts());
-
-                    // Pass the tick to the engine for processing.
                     engine.onTick(tick);
+                    writer.write(tick);
 
                 } catch (Exception e) {
-                    // Log the error and continue processing the next line.
-                    // In a real system, you might use a more sophisticated logger.
                     System.err.println("Error processing tick line: " + line);
                     e.printStackTrace();
                 }
