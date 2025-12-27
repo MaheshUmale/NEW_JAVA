@@ -1,23 +1,132 @@
 # NEW_JAVA
 
 
+* * *
 
-# Project Brief: High-Fidelity Option Trading Engine (AlphaPulse)
-1. Core IntentBuild a Java-based automated trading system that detects institutional "failed auctions" by calculating the AlphaPulse Ratio ($\alpha$). The system must be deterministic, meaning it must produce the exact same results whether running on Live WebSocket data or replaying historical JSON data from .gz files.
-2. The Formula ($\alpha$)The system monitors the relationship between the Underlier (NIFTY Spot) and the Option Premium.$$\alpha = \frac{\Delta \text{Option Premium}}{(\Delta \text{Nifty Spot} \times \text{Option Delta})}$$Window: 10-tick rolling average.Signal: If $\alpha < 0.8$ while Nifty is at HOD (High of Day), it indicates "Absorption" (Sellers are absorbing Buy orders), signaling a "Failed Auction" and a potential reversal.
-3. System Architecture (The "Three-Chamber" Design)The agent must keep these three modules strictly decoupled:
-  A. Ingestion Layer (The Harvester)Live Mode: Uses Upstox Java SDK MarketDataStreamerV3. It must decode Protobuf/JSON and map it to a universal Tick object.Replay Mode: Reads .gz files line-by-line. Each line is a JSON string.Constraint: The Engine must not know which mode is active.
-  B. Logic Layer (The Engine)State Management: Stores a rolling buffer of the last $N$ ticks in memory.Hybrid AMT: Maintains a "Time Price Opportunity" (TPO) profile for the Spot and a "Volume Profile" for the Future.Time Keeping: Uses a VirtualClock.Live: System.currentTimeMillis().Replay: Extracts timestamp from the JSON tick. NEVER use now() in code.
-  C. Persistence Layer (The Vault)Database: QuestDB (via InfluxDB Line Protocol).
-  Requirement: Async writes. The calculation thread must never wait for the database.
-4. Detailed File & API LogicFile ComponentDetailed Logic for AI AgentTick.java (Model)Immutable POJO: symbol, price, v, exchange_ts, receive_ts.UpstoxMapper.javaLoads instrument_key mappings from Upstox API on startup and caches them.GzReplayer.javaDecompresses .gz, reads line, parses JSON, calls clock.update(ts), then engine.onTick(tick).AlphaEngine.javaBuffer: EvictingQueue(10). Math: Calculates $\alpha$. Event: Fires SignalEvent to OrderManager.QuestDBWriter.javaUses io.questdb.client.Sender. Table: ticks (partitioned by Day).
-5. Corner Case Handling (The "Shields")To prevent crashes and "Null Pointer" errors, the agent must implement:The Zero-Move Shield:Problem: If Nifty Spot doesn't move between two ticks, $\Delta \text{Spot} = 0$, causing a Divide-by-Zero error.Logic: if (Math.abs(deltaSpot) < 0.00001) return 1.0;The Stale-Data Shield:Problem: If the Option tick arrives but the Spot tick is 5 seconds old.Logic: Check tick.exchange_ts. If the difference between Spot and Option timestamps $> 1000ms$, discard the $\alpha$ calculation for that tick.The Memory Shield (16GB Limit):Problem: Keeping all day's ticks in a List<Tick> will cause OutOfMemory (OOM).Logic: Use QuestDB for history. Only keep the current sliding window (e.g., last 100 ticks) in JVM memory.The "Recoup" logic:Problem: System crashes at 11:00 AM.Logic: On restart, the system queries QuestDB for timestamp > 09:15:00 to "warm up" the Alpha buffers before connecting to the Live WebSocket.
-6. Development Checklist for Agent
-  Step 1: Create MarketTick interface and GzJsonTick implementation.
-  Step 2: Build VirtualClock to handle temporal determinism.
-  Step 3: Implement GzFileReplayer to verify data flows correctly from your Friday files.
-  Step 4: Build AlphaEngine and log $\alpha$ values to console to verify math.
+**Project Brief: High-Fidelity Option Trading Engine (AlphaPulse)**
+===================================================================
 
+### **1\. Core Intent**
+
+Build a Java-based automated trading system that detects institutional "failed auctions" by calculating the **AlphaPulse Ratio** (α). The system must be **deterministic**, meaning it must produce the exact same results whether running on Live WebSocket data or replaying historical JSON data from `.gz` files.
+
+### **2\. The Formula (α)**
+
+The system monitors the relationship between the Underlier (NIFTY Spot) and the Option Premium.
+
+α\=(ΔNifty Spot×Option Delta)ΔOption Premium​
+
+*   **Window:** 10-tick rolling average.
+    
+*   **Signal:** If α<0.8 while Nifty is at HOD (High of Day), it indicates "Absorption" (Sellers are absorbing Buy orders), signaling a "Failed Auction" and a potential reversal.
+    
+
+* * *
+
+### **3\. System Architecture (The "Three-Chamber" Design)**
+
+The agent must keep these three modules strictly decoupled:
+
+#### **A. Ingestion Layer (The Harvester)**
+
+*   **Live Mode:** Uses Upstox Java SDK `MarketDataStreamerV3`. It must decode Protobuf/JSON and map it to a universal `Tick` object.
+    
+*   **Replay Mode:** Reads `.gz` files line-by-line. Each line is a JSON string.
+    
+*   **Constraint:** The Engine must not know which mode is active.
+    
+
+#### **B. Logic Layer (The Engine)**
+
+*   **State Management:** Stores a rolling buffer of the last N ticks in memory.
+    
+*   **Hybrid AMT:** Maintains a "Time Price Opportunity" (TPO) profile for the Spot and a "Volume Profile" for the Future.
+    
+*   **Time Keeping:** Uses a `VirtualClock`.
+    
+    *   _Live:_ `System.currentTimeMillis()`.
+        
+    *   _Replay:_ Extracts timestamp from the JSON tick. **NEVER use `now()` in code.**
+        
+
+#### **C. Persistence Layer (The Vault)**
+
+*   **Database:** QuestDB (via InfluxDB Line Protocol).
+    
+*   **Requirement:** Async writes. The calculation thread must never wait for the database.
+    
+
+* * *
+
+### **4\. Detailed File & API Logic**
+
+File Component
+
+Detailed Logic for AI Agent
+
+`Tick.java` (Model)
+
+Immutable POJO: `symbol`, `price`, `v`, `exchange_ts`, `receive_ts`.
+
+`UpstoxMapper.java`
+
+Loads `instrument_key` mappings from Upstox API on startup and caches them.
+
+`GzReplayer.java`
+
+Decompresses `.gz`, reads line, parses JSON, calls `clock.update(ts)`, then `engine.onTick(tick)`.
+
+`AlphaEngine.java`
+
+**Buffer:** `EvictingQueue(10)`. **Math:** Calculates α. **Event:** Fires `SignalEvent` to OrderManager.
+
+`QuestDBWriter.java`
+
+Uses `io.questdb.client.Sender`. Table: `ticks` (partitioned by Day).
+
+* * *
+
+### **5\. Corner Case Handling (The "Shields")**
+
+To prevent crashes and "Null Pointer" errors, the agent must implement:
+
+1.  **The Zero-Move Shield:**
+    
+    *   _Problem:_ If Nifty Spot doesn't move between two ticks, ΔSpot\=0, causing a Divide-by-Zero error.
+        
+    *   _Logic:_ `if (Math.abs(deltaSpot) < 0.00001) return 1.0;`
+        
+2.  **The Stale-Data Shield:**
+    
+    *   _Problem:_ If the Option tick arrives but the Spot tick is 5 seconds old.
+        
+    *   _Logic:_ Check `tick.exchange_ts`. If the difference between Spot and Option timestamps \>1000ms, discard the α calculation for that tick.
+        
+3.  **The Memory Shield (16GB Limit):**
+    
+    *   _Problem:_ Keeping all day's ticks in a `List<Tick>` will cause OutOfMemory (OOM).
+        
+    *   _Logic:_ Use QuestDB for history. Only keep the **current sliding window** (e.g., last 100 ticks) in JVM memory.
+        
+4.  **The "Recoup" logic:**
+    
+    *   _Problem:_ System crashes at 11:00 AM.
+        
+    *   _Logic:_ On restart, the system queries QuestDB for `timestamp > 09:15:00` to "warm up" the Alpha buffers before connecting to the Live WebSocket.
+        
+
+* * *
+
+### **6\. Development Checklist for Agent**
+
+1.  **Step 1:** Create `MarketTick` interface and `GzJsonTick` implementation.
+    
+2.  **Step 2:** Build `VirtualClock` to handle temporal determinism.
+    
+3.  **Step 3:** Implement `GzFileReplayer` to verify data flows correctly from your Friday files.
+    
+4.  **Step 4:** Build `AlphaEngine` and log α values to console to verify math.
+    
 
 
 1. Recommended Project Folder Structure
@@ -62,4 +171,89 @@ Persistence,Saves every single tick to QuestDB.,Non-Blocking: Writing to disk wo
 
 
 
+* * *
+
+### **AI Agent Master Prompt: The AlphaPulse System**
+
+**Role:** You are a Senior Quantitative Developer specializing in low-latency Java 21 trading systems. You are building "AlphaPulse," a system designed to detect institutional absorption and failed auctions in the Nifty 50 options market.
+
+**Primary Goal:** Create a deterministic trading engine that processes both live Upstox WebSocket feeds and historical `.gz` JSON tick logs with identical logic.
+
+**Core Rules (Non-Negotiable):**
+
+1.  **Temporal Determinism:** Never call `System.currentTimeMillis()` or `now()` in the logic layer. All time must be derived from the `MarketTick.exchange_ts`.
+    
+2.  **Memory Constraint (16GB):** Do not store a day’s worth of ticks in a `List`. Use a sliding window (e.g., `EvictingQueue`) for calculations and QuestDB for persistence.
+    
+3.  **Defensive Math:** Always check for zero-deltas before division (e.g., when calculating α).
+    
+4.  **Decoupling:** The "Harvester" (Data In) must be isolated from the "Engine" (Logic) via a standard `MarketTick` interface.
+    
+
+* * *
+
+### **Module 1: Data Model & Infrastructure**
+
+*   **Universal Model:** Implement an immutable `MarketTick` interface with: `symbol`, `price`, `volume`, `exchange_ts`.
+    
+*   **JSON Adapter:** Create a `GzJsonTick` class to map my specific Friday JSON structure to the `MarketTick` interface.
+    
+*   **Virtual Clock:** Implement a `Clock` utility that has two modes:
+    
+    *   `LIVE`: Returns system time.
+        
+    *   `REPLAY`: Returns the timestamp of the last processed tick.
+        
+
+### **Module 2: The AlphaPulse Engine**
+
+*   **Sliding Window:** Maintain a rolling buffer of 10 ticks for both the Spot Index and the specific Option Premium.
+    
+*   **Alpha Calculation:** α\=(SpotPriceChange×Delta)OptionPriceChange​.
+    
+*   **Logic:** If α<0.8 and Spot is at HOD, trigger a `FAILED_AUCTION_SIGNAL`.
+    
+*   **Corner Case:** If `SpotPriceChange == 0`, return α\=1.0 to prevent `NaN`.
+    
+
+### **Module 3: Harvesters & Persistence**
+
+*   **QuestDB Writer:** Use InfluxDB Line Protocol (ILP) for async, non-blocking writes to a `ticks` table.
+    
+*   **GZ Replayer:** Create a utility that reads `.gz` files line-by-line, updates the `VirtualClock`, and pushes ticks to the Engine.
+    
+*   **Recoup Logic:** On startup, the system must query QuestDB for the last 30 minutes of data to "warm up" the Alpha sliding windows before going live.
+    
+
+* * *
+
+### **Specific Instructions for the AI Agent:**
+
+1.  Start by defining the `MarketTick` interface and the `VirtualClock`.
+    
+2.  Implement the `GzFileReplayer` so I can test the logic against my historical Friday data immediately.
+    
+3.  Ensure the `QuestDBWriter` runs on a separate thread to keep the main logic loop ultra-fast.
+    
+
+* * *
+
+### **System Recoup Flow (The "Crash-Proof" Protocol)**
+
+*   **Step 1:** System detects it is starting mid-day.
+    
+*   **Step 2:** `QuestDBReader` fetches the last 300 ticks for the tracked Nifty symbols.
+    
+*   **Step 3:** The `AlphaEngine` processes these ticks at max speed to fill the rolling buffers.
+    
+*   **Step 4:** Once buffers are full, the `UpstoxHarvester` switches to the live WebSocket.
+    
+
+This [Market Data Replay with Upstox](https://www.youtube.com/watch?v=GZzy4-_prUw) demonstrates the live streaming mechanics you'll need to replicate in your "Harvester" module once the "Replayer" is solid.
+
+
+
 REF: https://github.com/upstox/upstox-java
+
+https://upstox.com/developer/api-documentation/v3/get-market-data-feed/
+
