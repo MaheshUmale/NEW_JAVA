@@ -255,5 +255,11 @@ This [Market Data Replay with Upstox](https://www.youtube.com/watch?v=GZzy4-_prU
 
 REF: https://github.com/upstox/upstox-java
 
+
+DATA is KEPT AT https://github.com/MaheshUmale/javaApp/tree/main/data
+
+
+
+
 https://upstox.com/developer/api-documentation/v3/get-market-data-feed/
 
