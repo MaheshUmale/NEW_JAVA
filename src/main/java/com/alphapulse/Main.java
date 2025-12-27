@@ -20,7 +20,7 @@ public class Main {
         // --- Configuration ---
         final String spotSymbol = "NIFTY_50";
         final String optionSymbol = "NIFTY_50_OPT";
-        final Path dataFile = Paths.get("data", "failed_auction_test.json.gz");
+        final Path dataFile = Paths.get("data", "file5.json.gz");
         final int recoupMinutes = 30;
 
         // --- System Initialization ---

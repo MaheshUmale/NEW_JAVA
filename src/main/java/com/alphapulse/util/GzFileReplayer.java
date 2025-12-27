@@ -3,6 +3,7 @@ package com.alphapulse.util;
 import com.alphapulse.core.AlphaEngine;
 import com.alphapulse.infra.QuestDBWriter;
 import com.alphapulse.model.GzJsonTick;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
@@ -53,11 +54,26 @@ public class GzFileReplayer {
             String line;
             while ((line = br.readLine()) != null) {
                 try {
-                    GzJsonTick tick = objectMapper.readValue(line, GzJsonTick.class);
+                    JsonNode rootNode = objectMapper.readTree(line);
+                    JsonNode feedsNode = rootNode.path("feeds");
 
-                    clock.update(tick.exchange_ts());
-                    engine.onTick(tick);
-                    writer.write(tick);
+                    feedsNode.fields().forEachRemaining(entry -> {
+                        String symbol = entry.getKey();
+                        JsonNode ltpcNode = entry.getValue().path("ff").path("marketFF").path("ltpc");
+
+                        if (ltpcNode.isObject()) {
+                            double price = ltpcNode.path("ltp").asDouble();
+                            long volume = ltpcNode.path("ltq").asLong();
+                            long exchange_ts = ltpcNode.path("ltt").asLong();
+
+                            if (price > 0 && volume > 0 && exchange_ts > 0) {
+                                GzJsonTick tick = new GzJsonTick(symbol, price, volume, exchange_ts);
+                                clock.update(tick.exchange_ts());
+                                engine.onTick(tick);
+                                writer.write(tick);
+                            }
+                        }
+                    });
 
                 } catch (Exception e) {
                     System.err.println("Error processing tick line: " + line);

@@ -1,12 +1,14 @@
 package com.alphapulse.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * An immutable implementation of MarketTick specifically for parsing
  * historical data from gzipped JSON files.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class GzJsonTick implements MarketTick {
 
     private final String symbol;
