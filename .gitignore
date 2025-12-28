@@ -26,3 +26,6 @@ dist-ssr
 # Replay data
 file5.json
 replay_server.py
+
+# Maven build artifacts
+target/
