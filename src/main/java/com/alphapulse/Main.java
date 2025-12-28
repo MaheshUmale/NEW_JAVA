@@ -38,13 +38,27 @@ public class Main {
         engine.addListener(webSocketServer);
         webSocketServer.start();
 
+        // Graceful shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                webSocketServer.stop();
+                System.out.println("WebSocket server stopped.");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                e.printStackTrace();
+            }
+        }));
+
         try (QuestDBWriter writer = new QuestDBWriter()) {
             if (mode == VirtualClock.ClockMode.REPLAY) {
                 // --- Replay Mode ---
-                GzFileReplayer replayer = new GzFileReplayer(clock, engine, writer);
-                System.out.println("Starting replay of file: " + dataFile.toAbsolutePath());
-                replayer.replay(dataFile);
-                System.out.println("Replay finished successfully.");
+                // Run replayer in a separate thread so it doesn't block the main thread
+                new Thread(() -> {
+                    GzFileReplayer replayer = new GzFileReplayer(clock, engine, writer);
+                    System.out.println("Starting replay of file: " + dataFile.toAbsolutePath());
+                    replayer.replay(dataFile);
+                    System.out.println("Replay finished successfully.");
+                }).start();
             } else {
                 // --- Live Mode with Recoup Protocol ---
                 System.out.println("--- Starting System Recoup Protocol ---");
@@ -61,21 +75,15 @@ public class Main {
                 harvester.start();
 
                 System.out.println("Live harvester is running. Press Ctrl+C to stop.");
-                Thread.sleep(10000); // Run for 10 seconds
-                harvester.close();
-                harvester.awaitCompletion();
             }
+
+            // Keep the main thread alive to allow the WebSocket server to run
+            // indefinitely. The server is stopped by the shutdown hook.
+            Thread.currentThread().join();
+
         } catch (Exception e) {
             System.err.println("An error occurred: " + e.getMessage());
             e.printStackTrace();
-        } finally {
-            try {
-                webSocketServer.stop();
-                System.out.println("WebSocket server stopped.");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                e.printStackTrace();
-            }
         }
     }
 }
