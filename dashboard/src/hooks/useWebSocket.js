@@ -12,27 +12,18 @@ const useWebSocket = (url) => {
 
     ws.onmessage = (event) => {
       try {
+        // The replay server now sends simplified, individual ticks.
+        // We just need to parse the JSON and pass it along.
         const message = JSON.parse(event.data);
-        const niftySpot = message.feeds['NSE_INDEX|Nifty 50']?.fullFeed?.indexFF?.ltpc?.ltp;
 
-        // Find an ATM option - for now, just picking the first one
-        let optionPremium = null;
-        for (const key in message.feeds) {
-          if (key.startsWith('NSE_FO')) {
-            optionPremium = message.feeds[key]?.fullFeed?.marketFF?.ltpc?.ltp;
-            break;
-          }
+        // The TradingChart component expects a 'time' field, but the data has 'exchange_ts'.
+        // We'll rename it here to match what the chart expects.
+        if (message.exchange_ts) {
+          message.time = message.exchange_ts / 1000; // Convert to seconds
+          delete message.exchange_ts;
         }
 
-        if (niftySpot && optionPremium) {
-          const newTick = {
-            niftySpot,
-            optionPremium,
-            alpha: niftySpot / optionPremium, // Placeholder alpha calculation
-            time: message.currentTs / 1000,
-          };
-          setData(newTick);
-        }
+        setData(message);
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
       }
