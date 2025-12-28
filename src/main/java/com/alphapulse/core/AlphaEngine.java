@@ -1,8 +1,12 @@
 package com.alphapulse.core;
 
+import com.alphapulse.events.AlphaSignalEvent;
+import com.alphapulse.events.AlphaSignalListener;
 import com.alphapulse.model.MarketTick;
 import com.google.common.collect.EvictingQueue;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Queue;
 
 /**
@@ -23,6 +27,7 @@ public class AlphaEngine {
 
     private final Queue<MarketTick> spotTicks;
     private final Queue<MarketTick> optionTicks;
+    private final List<AlphaSignalListener> listeners = new ArrayList<>();
 
     private double spotHighOfDay = Double.MIN_VALUE;
 
@@ -36,6 +41,15 @@ public class AlphaEngine {
         this.optionSymbol = optionSymbol;
         this.spotTicks = EvictingQueue.create(WINDOW_SIZE);
         this.optionTicks = EvictingQueue.create(WINDOW_SIZE);
+    }
+
+    /**
+     * Adds a listener to receive alpha signal events.
+     *
+     * @param listener The listener to add.
+     */
+    public void addListener(AlphaSignalListener listener) {
+        listeners.add(listener);
     }
 
     /**
@@ -83,9 +97,18 @@ public class AlphaEngine {
 
         double alpha = (spotPriceChange * DELTA) / optionPriceChange;
 
-        System.out.printf("Calculated Alpha: %.2f (Spot Change: %.2f, Option Change: %.2f)%n",
-                alpha, spotPriceChange, optionPriceChange);
+        // --- Event Emission ---
+        AlphaSignalEvent event = new AlphaSignalEvent(
+                newestSpotTick.exchange_ts() / 1_000_000, // Convert ns to ms for JS
+                newestSpotTick.price(),
+                newestOptionTick.price(),
+                alpha
+        );
+        for (AlphaSignalListener listener : listeners) {
+            listener.onAlphaSignal(event);
+        }
 
+        // --- Signal Logic ---
         // Logic: If α < 0.8 and Spot is at HOD, trigger a signal.
         if (alpha < ALPHA_THRESHOLD && newestSpotTick.price() >= spotHighOfDay) {
             System.out.println("!!! FAILED_AUCTION_SIGNAL !!!");
