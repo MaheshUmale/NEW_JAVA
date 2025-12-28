@@ -15,6 +15,8 @@ public class AlphaEngine {
     private static final int WINDOW_SIZE = 10;
     private static final double ALPHA_THRESHOLD = 0.8;
     private static final double DELTA = 0.5; // Assuming a delta of 0.5 for at-the-money options
+    private static final double ZERO_MOVE_THRESHOLD = 0.00001;
+    private static final long STALE_DATA_THRESHOLD_NS = 1_000_000_000L; // 1 second
 
     private final String spotSymbol;
     private final String optionSymbol;
@@ -67,14 +69,15 @@ public class AlphaEngine {
         double spotPriceChange = newestSpotTick.price() - oldestSpotTick.price();
         double optionPriceChange = newestOptionTick.price() - oldestOptionTick.price();
 
-        // The "Zero-Move Shield"
-        if (Math.abs(spotPriceChange) < 0.00001) {
-            // No change in spot price, alpha is considered neutral.
+        // The "Stale-Data Shield"
+        long timeDifference = Math.abs(newestSpotTick.exchange_ts() - newestOptionTick.exchange_ts());
+        if (timeDifference > STALE_DATA_THRESHOLD_NS) {
+            System.out.println("Stale data detected. Discarding calculation.");
             return;
         }
 
-        // Avoid division by zero for option price change as well.
-        if (Math.abs(optionPriceChange) < 0.00001) {
+        // The "Zero-Move Shield"
+        if (isPriceChangeInsignificant(spotPriceChange) || isPriceChangeInsignificant(optionPriceChange)) {
             return;
         }
 
@@ -89,5 +92,9 @@ public class AlphaEngine {
             System.out.printf("Time: %d, Alpha: %.2f, Spot Price: %.2f, HOD: %.2f%n",
                     newestSpotTick.exchange_ts(), alpha, newestSpotTick.price(), spotHighOfDay);
         }
+    }
+
+    private boolean isPriceChangeInsignificant(double priceChange) {
+        return Math.abs(priceChange) < ZERO_MOVE_THRESHOLD;
     }
 }
