@@ -3,6 +3,7 @@ package com.alphapulse;
 import com.alphapulse.core.AlphaEngine;
 import com.alphapulse.infra.QuestDBReader;
 import com.alphapulse.infra.QuestDBWriter;
+import com.alphapulse.infra.UiWebSocketServer;
 import com.alphapulse.infra.UpstoxHarvester;
 import com.alphapulse.util.GzFileReplayer;
 import com.alphapulse.util.VirtualClock;
@@ -22,6 +23,7 @@ public class Main {
         final String optionSymbol = "NIFTY_50_OPT";
         final Path dataFile = Paths.get("data", "file5.json.gz");
         final int recoupMinutes = 30;
+        final int webSocketPort = 8080;
 
         // --- System Initialization ---
         VirtualClock.ClockMode mode = args.length > 0 && args[0].equalsIgnoreCase("LIVE")
@@ -32,6 +34,9 @@ public class Main {
 
         VirtualClock clock = new VirtualClock(mode);
         AlphaEngine engine = new AlphaEngine(spotSymbol, optionSymbol);
+        UiWebSocketServer webSocketServer = new UiWebSocketServer(webSocketPort);
+        engine.addListener(webSocketServer);
+        webSocketServer.start();
 
         try (QuestDBWriter writer = new QuestDBWriter()) {
             if (mode == VirtualClock.ClockMode.REPLAY) {
@@ -63,6 +68,14 @@ public class Main {
         } catch (Exception e) {
             System.err.println("An error occurred: " + e.getMessage());
             e.printStackTrace();
+        } finally {
+            try {
+                webSocketServer.stop();
+                System.out.println("WebSocket server stopped.");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                e.printStackTrace();
+            }
         }
     }
 }

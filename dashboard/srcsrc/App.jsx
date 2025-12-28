@@ -7,7 +7,9 @@ import SystemVitals from './components/SystemVitals';
 
 function App() {
   const latestTick = useWebSocket('ws://localhost:8080');
-  const [chartData, setChartData] = useState([]);
+  const [niftyData, setNiftyData] = useState([]);
+  const [optionData, setOptionData] = useState([]);
+  const [alphaData, setAlphaData] = useState([]);
 
   useEffect(() => {
     if (latestTick) {
@@ -15,7 +17,17 @@ function App() {
         time: latestTick.time / 1000,
         value: latestTick.niftySpot,
       };
-      setChartData(prevData => [...prevData, formattedNiftyData].slice(-500));
+      const formattedOptionData = {
+        time: latestTick.time / 1000,
+        value: latestTick.optionPremium,
+      };
+      const formattedAlphaData = {
+        time: latestTick.time / 1000,
+        value: latestTick.alpha,
+      };
+      setNiftyData(prevData => [...prevData, formattedNiftyData].slice(-500));
+      setOptionData(prevData => [...prevData, formattedOptionData].slice(-500));
+      setAlphaData(prevData => [...prevData, formattedAlphaData].slice(-500));
     }
   }, [latestTick]);
 
@@ -24,7 +36,7 @@ function App() {
       <Sidebar />
       <div className="flex-1 p-4">
         <h2 className="text-xl mb-4">Trading Dashboard</h2>
-        <TradingChart niftyData={chartData} />
+        <TradingChart niftyData={niftyData} optionData={optionData} alphaData={alphaData} />
       </div>
       <div className="w-64 bg-gray-900 p-4">
         <KillSwitch />
